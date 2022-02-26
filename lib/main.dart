@@ -2,56 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:english_words/english_words.dart';
+import 'package:flutter_app/user.dart';
 import 'package:http/http.dart' as http;
-
-Future<List<User>> fetchUsers(http.Client client) async {
-  final response = await client
-      .get(Uri.parse('192.168.172.80:8080/user/getAll'));
-
-  return compute(parseUsers, response.body);
-}
-
-List<User> parseUsers(String responseBody) {
-  final parsed = jsonDecode(responseBody).cast<Map<String, dynamic>>();
-  return parsed.map<User>((json) => User.fromJson(json)).toList();
-}
-
-class User {
-  final int id;
-  final String firstName;
-  final String lastName;
-  final String birthDate;
-  final int moneyBalance;
-  final int personalCardId;
-
-  const User({
-    required this.id,
-    required this.firstName,
-    required this.lastName,
-    required this.birthDate,
-    required this.moneyBalance,
-    required this.personalCardId
-  });
-
-  factory User.fromJson(Map<String, dynamic> json) {
-    return User(
-      id: json['id'] as int,
-      firstName: json['firstName'] as String,
-      lastName: json['lastName'] as String,
-      birthDate: json['birthDate'] as String,
-      moneyBalance: json['moneyBalance'] as int,
-      personalCardId: json['personalCardID'] as int
-    );
-  }
-}
 
 void main() {
   runApp(const MyApp());
 }
+
+HomePage homePage = const HomePage(title: "Users",);
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
@@ -66,100 +25,106 @@ class MyApp extends StatelessWidget {
             foregroundColor: Colors.black,
           ),
         ),
-        home: const RandomWords()
-    );
+        home: homePage);
   }
 }
 
-class RandomWords extends StatefulWidget {
-  const RandomWords({Key? key}) : super(key: key);
+class HomePage extends StatelessWidget {
+  const HomePage({Key? key, required this.title}) : super(key: key);
 
-  @override
-  _RandomWordsState createState() => _RandomWordsState();
-}
-
-class _RandomWordsState extends State<RandomWords> {
-  final _suggestions = <WordPair>[];
-  final _saved = <WordPair>{};
-  final _biggerFont = const TextStyle(fontSize: 18.0);
+  final String title;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Startup Name Generator"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.list),
-            onPressed: _pushSaved,
-            tooltip: "Saved Suggestions",
-          )
-        ],
-      ),
-      body: ListView.builder(
-          padding: const EdgeInsets.all(16.0),
-          itemBuilder: (context, i) {
-            if (i.isOdd) return const Divider();
+        appBar: AppBar(
+          title: const Text("Users"),
+        ),
+        body: const UsersList());
+  }
+}
 
-            final index = i ~/ 2;
-            if (index >= _suggestions.length) {
-              _suggestions.addAll(generateWordPairs().take(10));
-            }
+class UsersList extends StatefulWidget {
+  const UsersList({Key? key}) : super(key: key);
 
-            final pair = _suggestions[index];
+  @override
+  _UsersListState createState() => _UsersListState();
+}
 
-            final alreadySaved = _saved.contains(pair);
-            return ListTile(
-              title: Text(
-                pair.asPascalCase,
-                style: _biggerFont,
-              ),
-              trailing: Icon(
-                alreadySaved ? Icons.favorite : Icons.favorite_border,
-                color: alreadySaved ? Colors.red : null,
-                semanticLabel: alreadySaved ? "Remove from saved" : "Save",
-              ),
-              onTap: () {
-                setState(() {
-                  if (alreadySaved) {
-                    _saved.remove(pair);
-                  } else {
-                    _saved.add(pair);
-                  }
-                });
+class _UsersListState extends State<UsersList> {
+  final _biggerFont = const TextStyle(fontSize: 18.0);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<User>>(
+      future: fetchUsers(http.Client()),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text('An error has occurred!'),
+          );
+        } else if (snapshot.hasData) {
+          List<User> users = snapshot.data!;
+          if (users.isNotEmpty) {
+            return ListView.builder(
+              padding: const EdgeInsets.all(16.0),
+              itemCount: users.length * 2 - 1,
+              itemBuilder: (context, i) {
+                if (i.isOdd) return const Divider();
+                final index = i ~/ 2;
+                final user = users[index];
+
+                return ListTile(
+                  title: Text(
+                    user.firstName + ' ' + user.lastName,
+                    style: _biggerFont,
+                  ),
+                  onTap: () {
+                    _pushUser(context, user);
+                  },
+                );
               },
             );
-          }),
+          } else {
+            return const Center(
+              child: Text("No users data"),
+            );
+          }
+        } else {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+      },
     );
   }
 
-  void _pushSaved() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
+  void _pushUser(BuildContext context, User user) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
         builder: (context) {
-          final tiles = _saved.map(
-                (pair) {
-              return ListTile(
-                title: Text(
-                  pair.asPascalCase,
+          return Scaffold(
+              appBar: AppBar(
+                title: const Text("User details"),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.delete),
+                    onPressed: () {
+                      deleteUser(user.id);
+                      Navigator.pop(context);
+                      setState(() {});
+                    },
+                    tooltip: "Delete user",
+                  )
+                ],
+              ),
+              body: Center(
+                child: Text(
+                  'Details of ${user.firstName} ${user.lastName}:\n\nBirth Date: ${user.birthDate}\n\nMoney Balance: ${user.moneyBalance}',
                   style: _biggerFont,
                 ),
-              );
-            },
-          );
-          final divided = tiles.isNotEmpty
-              ? ListTile.divideTiles(
-            context: context,
-            tiles: tiles,
-          ).toList()
-              : <Widget>[];
-
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text('Saved Suggestions'),
-            ),
-            body: ListView(children: divided),
-          );
+              ));
         },
       ), // ...to here.
     );
